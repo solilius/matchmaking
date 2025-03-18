@@ -1,6 +1,9 @@
 using MatchMaking.Interfaces;
 using Matchmaking.Models;
 using Matchmaking.Repositories;
+using Matchmaking.Services;
+using MatchMaking.Workers;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,8 +15,20 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     ConnectionMultiplexer.Connect($"{redisSettings.Host}:{redisSettings.Port}")
 );
 
+builder.Services.AddHostedService<Worker>(sp =>
+{
+    var redisDb = sp.GetRequiredService<IConnectionMultiplexer>().GetDatabase();
+    var matchmakingService = sp.GetRequiredService<MatchmakingService>();
+
+    return new Worker(
+        redisDb,
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<RedisSettings>>(),
+        matchmakingService.ProcessFindMatch
+    );
+});
+
 builder.Services.AddSingleton<IPlayerRepository, PlayerRepository>();
-builder.Services.AddSingleton<Matchmaking.Services.MatchmakingService>();
+builder.Services.AddSingleton<MatchmakingService>();
 
 builder.Services.AddControllers();
 builder.Services.AddSwaggerGen();

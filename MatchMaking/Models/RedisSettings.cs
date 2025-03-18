@@ -5,6 +5,8 @@ public class RedisSettings
     public string Host { get; set; }
     public int Port { get; set; }
     public RedisKeys RedisKeys { get; set; }
+    public int ProcessBatchSize { get; set; }
+
 }
 
 public class RedisKeys

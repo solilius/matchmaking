@@ -58,6 +58,12 @@ public class MatchmakingService
         return isSuccess;
     }
 
+    public Task ProcessFindMatch(QueuedPlayer queuedPlayer)
+    {
+        Console.WriteLine($"Processing player: {queuedPlayer.PlayerId}");
+        return Task.CompletedTask;
+    }
+    
     private string FormatMemberValue(string playerId, int rating)
     {
         return $"{playerId}:{rating}";
