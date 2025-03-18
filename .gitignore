@@ -1,0 +1,46 @@
+# Build artifacts
+bin/
+obj/
+out/
+
+# Rider/JetBrains files
+.idea/
+*.sln.iml
+
+# User-specific files
+*.user
+*.userosscache
+*.suo
+*.vsp
+*.vspx
+*.vspscc
+*.vssscc
+
+# .NET Core specific
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Visual Studio Code settings
+.vscode/
+
+# ASP.NET Core secrets
+secrets.json
+
+# Logs
+*.log
+
+# Environment files
+.env
+*.db
+
+# Optional: Mac/Linux junk files
+.DS_Store
+Thumbs.db
+
+# Optional: Rider auto-generated http scratch files
+*.http
+
+# Optional: Docker build folders (if you dockerize)
+**/docker-compose.override.yml
+**/docker-compose.yml
