@@ -1,28 +1,24 @@
+using MatchMaking.Interfaces;
 using Matchmaking.Models;
+using Matchmaking.Repositories;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Bind config
 builder.Services.Configure<RedisSettings>(builder.Configuration.GetSection("Redis"));
-
-// Load Redis settings
 var redisSettings = builder.Configuration.GetSection("Redis").Get<RedisSettings>();
 
-// Register Redis connection
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     ConnectionMultiplexer.Connect($"{redisSettings.Host}:{redisSettings.Port}")
 );
 
-builder.Services.AddScoped<Matchmaking.Services.MatchmakingService>();
+builder.Services.AddSingleton<IPlayerRepository, PlayerRepository>();
+builder.Services.AddSingleton<Matchmaking.Services.MatchmakingService>();
+
 builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-
 var app = builder.Build();
-
-
 
 if (app.Environment.IsDevelopment())
 

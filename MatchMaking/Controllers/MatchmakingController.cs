@@ -10,26 +10,37 @@ public class MatchmakingController : ControllerBase
 {
     private readonly MatchmakingService _matchmakingService;
 
+    // TODO: ADD VALIDATIONS
+    // TODO: ERROR HANDLING
+    
     public MatchmakingController(MatchmakingService matchmakingService)
     {
         _matchmakingService = matchmakingService;
     }
 
     [HttpPost("queue")]
-    public async Task<IActionResult> QueueForMatch([FromBody] QueueRequest request)
+    public async Task<IActionResult> AddPlayerToQueue([FromBody] QueueRequest request)
     {
-        await _matchmakingService.AddToQueueAsync(request.PlayerId);
-        return Ok(new { status = 1, message = "Player added to queue." });
+        bool isSuccess = await _matchmakingService.AddToPlayerQueueAsync(request.PlayerId, request.SelectedHero);
+        
+        if (isSuccess) return Ok(new { status = 1, message = "Player added to queue." });
+        return StatusCode(500, new { status = 0, message = "Failed to add player to queue." });
     }
     
     [HttpGet("queue/{playerId}")]
     public async Task<IActionResult> GetPlayerStatus(string playerId)
     {
-        var isQueued = await _matchmakingService.IsPlayerInQueueAsync(playerId);
+        PlayerQueueStatus res = await _matchmakingService.GetPlayerQueueStatus(playerId);
 
-        if (!isQueued)
-            return NotFound(new { status = 0, message = "Player not found in queue." });
-
-        return Ok(new { status = 1, message = "Player is in the queue." });
+        return Ok(new { status = res.Status, matchId = res.MatchId });
+    }
+    
+    [HttpDelete("queue/{playerId}")]
+    public async Task<IActionResult> RemovePlayerFromQueue(string playerId)
+    {
+        bool isSuccess = await _matchmakingService.RemovePlayerFromQueueAsync(playerId);
+        
+        if (isSuccess) return Ok(new { status = 1, message = "Player removed from queue." });
+        return StatusCode(500, new { status = 0, message = "Failed to remove player from queue." });
     }
 }
