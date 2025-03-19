@@ -20,42 +20,43 @@ public class MatchmakingService
         _keys = redisSettings.Value.RedisKeys;
     }
 
-    public async Task<bool> AddToPlayerQueueAsync(string playerId, string selectedHero)
+    public async Task AddToPlayerQueueAsync(string playerId, string selectedHero)
     {
-        var player = await _playerRepository.GetPlayerAsync(playerId);
-        if (player is null) return false;
+        var player = await _playerRepository.GetPlayerAsync(_redisDb, playerId);
 
-        player.Status = PlayerStatus.SearchingMatch; // ew
         var queuedAt = DateTimeOffset.UtcNow;
         var timestamp = queuedAt.ToUnixTimeSeconds();
-        
-        var addPlayerToQueueTask =  _redisDb.SortedSetAddAsync(_keys.PlayersQueueKey, FormatMemberValue(playerId, player.SkillRating), timestamp);
-        var addTaskToQueue =  _redisDb.SortedSetAddAsync(_keys.TasksQueueKey, FormatQueuedPlayer(player, selectedHero, queuedAt), timestamp);
-        var updatePlayerTask = _playerRepository.SavePlayerAsync(player);
 
-        var results = await Task.WhenAll(addPlayerToQueueTask, addTaskToQueue, updatePlayerTask);
+        var transaction = _redisDb.CreateTransaction();
         
-        // TODO: if any false rollback
-        return results.All(v => v);
+        transaction.SortedSetAddAsync(_keys.PlayersQueueKey, FormatMemberValue(playerId, player.SkillRating), timestamp);
+        transaction.SortedSetAddAsync(_keys.TasksQueueKey, FormatQueuedPlayer(player, selectedHero, queuedAt), timestamp);
+        
+        player.Status = PlayerStatus.SearchingMatch; // ew
+        _playerRepository.SavePlayerAsync(transaction, player);
+        
+        await transaction.ExecuteAsync();
     }
 
     public async Task<PlayerQueueStatus> GetPlayerQueueStatus(string playerId)
     {
-        // get player - status
-        // get match
-        return null;
+        var player = await _playerRepository.GetPlayerAsync(_redisDb, playerId);
+        if (player.Status == PlayerStatus.FoundMatch)
+        {
+            var matchId = ""; // _matchRepository.MatchAsync(playerId);
+            return new PlayerQueueStatus(PlayerStatus.FoundMatch, matchId);
+        }
+        
+        return new PlayerQueueStatus(player.Status);
     }
 
-    public async Task<bool> RemovePlayerFromQueueAsync(string playerId)
+    public async Task RemovePlayerFromQueueAsync(string playerId)
     {
-        var player = await _playerRepository.GetPlayerAsync(playerId);
-        if (player is null) return false;
-
+        var player = await _playerRepository.GetPlayerAsync(_redisDb, playerId);
         var isSuccess = await _redisDb.SortedSetRemoveAsync(_keys.TasksQueueKey, FormatMemberValue(playerId, player.SkillRating));
         // remove from tasks
         // update player
-
-        return isSuccess;
+        // throw if failed(?)
     }
 
     public Task ProcessFindMatch(QueuedPlayer queuedPlayer)

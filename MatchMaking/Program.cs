@@ -15,14 +15,14 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     ConnectionMultiplexer.Connect($"{redisSettings.Host}:{redisSettings.Port}")
 );
 
-builder.Services.AddHostedService<Worker>(sp =>
+builder.Services.AddHostedService<MatcherWorker>(sp =>
 {
     var redisDb = sp.GetRequiredService<IConnectionMultiplexer>().GetDatabase();
     var matchmakingService = sp.GetRequiredService<MatchmakingService>();
 
-    return new Worker(
+    return new MatcherWorker(
         redisDb,
-        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<RedisSettings>>(),
+        sp.GetRequiredService<IOptions<RedisSettings>>(),
         matchmakingService.ProcessFindMatch
     );
 });

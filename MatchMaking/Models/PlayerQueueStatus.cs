@@ -1,7 +1,7 @@
 namespace Matchmaking.Models;
 
-public class PlayerQueueStatus
+public class PlayerQueueStatus(PlayerStatus status, string? matchId = null)
 {
-    public PlayerStatus Status { get; set; }
-    public string? MatchId { get; set; }
+    public PlayerStatus Status { get; init; } = status;
+    public string? MatchId { get; init; } = matchId;
 }

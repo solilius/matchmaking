@@ -6,29 +6,22 @@ using StackExchange.Redis;
 
 namespace Matchmaking.Repositories;
 
-public class PlayerRepository: IPlayerRepository
+public class PlayerRepository(IOptions<RedisSettings> redisSettings) : IPlayerRepository
 {
-    private readonly IDatabase _redisDb;
-    private readonly RedisKeys _keys;
-
-    public PlayerRepository(IConnectionMultiplexer redis, IOptions<RedisSettings> redisSettings)
-    {
-        _redisDb = redis.GetDatabase();
-        _keys = redisSettings.Value.RedisKeys;
-    }
+    private readonly RedisKeys _keys = redisSettings.Value.RedisKeys;
     
-    public async Task<bool> SavePlayerAsync(Player player)
+    public async Task<bool> SavePlayerAsync(IDatabaseAsync db, Player player)
     {
         var key = $"{_keys.PlayersKey}:{player.Id}";
         var json = JsonSerializer.Serialize(player);
 
-        return await _redisDb.StringSetAsync(key, json);
+        return await db.StringSetAsync(key, json);
     }
     
-    public async Task<Player?> GetPlayerAsync(string playerId)
+    public async Task<Player?> GetPlayerAsync(IDatabaseAsync db, string playerId)
     {
         var key = $"{_keys.PlayersKey}:{playerId}";
-        var json = await _redisDb.StringGetAsync(key);
+        var json = await db.StringGetAsync(key);
 
         if (json.IsNullOrEmpty) return null;
 

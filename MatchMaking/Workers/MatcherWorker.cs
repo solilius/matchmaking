@@ -1,12 +1,11 @@
 using System.Text.Json;
 using Matchmaking.Models;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
 
 namespace MatchMaking.Workers;
 
-public class Worker : IHostedService
+public class MatcherWorker : IHostedService
 {
     private readonly IDatabase _redisDb;
     private readonly Func<QueuedPlayer, Task> _processTask;
@@ -15,7 +14,7 @@ public class Worker : IHostedService
     private CancellationTokenSource? _internalCts;
     private Task? _backgroundTask;
 
-    public Worker(IDatabase redisDb, IOptions<RedisSettings> redisSettings, Func<QueuedPlayer, Task> processTask)
+    public MatcherWorker(IDatabase redisDb, IOptions<RedisSettings> redisSettings, Func<QueuedPlayer, Task> processTask)
     {
         _queueKey = redisSettings.Value.RedisKeys.TasksQueueKey;
         _batchSize = redisSettings.Value.ProcessBatchSize;
@@ -34,7 +33,7 @@ public class Worker : IHostedService
     {
         if (_internalCts != null)
         {
-            _internalCts.Cancel();
+            await _internalCts.CancelAsync();
             try
             {
                 if (_backgroundTask != null)
@@ -53,17 +52,16 @@ public class Worker : IHostedService
     {
         while (!token.IsCancellationRequested)
         {
-            var tasks = await GetQueuedPlayers(_batchSize);
-
-            if (tasks.Length == 0)
+            try
             {
-                await Task.Delay(500, token);
-                continue;
+                var tasks = await GetQueuedPlayers(_batchSize);
+                
+                if (tasks.Length > 0) tasks.ToList().ForEach(task => _processTask(task));
+                else await Task.Delay(500, token);
             }
-
-            foreach (var task in tasks)
+            catch (Exception e)
             {
-                await _processTask(task);
+                Console.WriteLine(e);
             }
         }
     }
