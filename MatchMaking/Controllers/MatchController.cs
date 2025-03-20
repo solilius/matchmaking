@@ -72,10 +72,10 @@ public class MatchController(
         {
             var player = await playerRepository.GetAsync(_redisDb, matchPlayer.PlayerId);
             var rateModifier = CalculatePlayerRating(matchPlayer.PlayerId, results);
-            playerRepository.SaveAsync(transaction, player.MatchCompleted(rateModifier));
+            playerRepository.EnqueueSaveAsync(transaction, player.MatchCompleted(rateModifier));
         }
 
-        matchRepository.RemoveAsync(transaction, matchId);
+        matchRepository.EnqueueRemoveAsync(transaction, matchId);
 
         await transaction.ExecuteAsync();
     }

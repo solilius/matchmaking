@@ -25,6 +25,15 @@ public class MatchRepository(IOptions<RedisSettings> redisSettings) : IRepositor
         return false;
     }
 
+    public void EnqueueSaveAsync(ITransaction db, Match match)
+    {
+        var key = GetKey(match.Id);
+        var json = JsonSerializer.Serialize(match);
+
+        db.StringSetAsync(key, json);
+        db.KeyExpireAsync(key, TimeSpan.FromSeconds(redisSettings.Value.MatchTTL));
+    }
+    
     public async Task<Match?> GetAsync(IDatabaseAsync db, string matchId)
     {
         var json = await GetJsonAsync( db, matchId);
@@ -44,11 +53,10 @@ public class MatchRepository(IOptions<RedisSettings> redisSettings) : IRepositor
         return json;
     }
     
-    public async Task<bool> RemoveAsync(IDatabaseAsync db, string matchId)
+    public void EnqueueRemoveAsync(ITransaction db, string matchId)
     {
         var key = GetKey(matchId);
-        
-        return await db.KeyDeleteAsync(key);
+        db.KeyDeleteAsync(key);
     }
     
     public string GetKey(string id)

@@ -7,7 +7,7 @@ namespace Matchmaking.Services;
 public partial class MatchmakingService
 {
     public async Task ProcessFindMatch(QueuedPlayer queuedPlayer)
-    { 
+    {
         try
         {
             var playerJson = await playerRepository.GetJsonAsync(_redisDb, queuedPlayer.PlayerId);
@@ -15,78 +15,109 @@ public partial class MatchmakingService
 
             if (player is null || player.Status != PlayerStatus.SearchingMatch) return;
 
-            var transaction = _redisDb.CreateTransaction();
 
-            transaction.AddCondition(Condition.StringEqual(playerRepository.GetKey(queuedPlayer.PlayerId),
-                playerJson));
-
-            var secondsPassed = (DateTimeOffset.UtcNow - queuedPlayer.QueuedAt).TotalSeconds;
-
-            if (secondsPassed >= _matchmakingConfig.MaxQueueWaitSeconds)
+            if (HasQueuedTooLong(queuedPlayer))
             {
+                var transaction = CreateWatchedTransaction(queuedPlayer, playerJson!);
                 HandleCreateMatch(transaction, [new(player, queuedPlayer.SelectedHero)], true);
-
-                bool isSuccess = await transaction.ExecuteAsync();
-                if (isSuccess) return;
+                await transaction.ExecuteAsync();
+                return; // If ExecuteAsync returns false, throw to requeue in catch.
             }
 
-            var rating = player.SkillRating;
-            var expansion = GetRatingExpansion(rating, secondsPassed);
-            var eligiblePlayers =                                      // + 1 because we add timestamp to the score
-                _redisDb.SortedSetRangeByScore(_lobbyKey, Math.Max(rating - expansion, 0), rating + expansion + 1);
+            var eligibleOpponentIds = GetEligibleOpponentIds(player, queuedPlayer);
 
-            var filteredEligiblePlayers = eligiblePlayers
-                .Where(p => p != queuedPlayer.PlayerId);
-
-            foreach (var eligiblePlayerId in filteredEligiblePlayers)
+            foreach (var eligiblePlayerId in eligibleOpponentIds)
             {
-                var opponent = await playerRepository.GetAsync(_redisDb, eligiblePlayerId);
-                if (opponent is null || opponent.Status != PlayerStatus.SearchingMatch) continue;
+                var transaction = CreateWatchedTransaction(queuedPlayer, playerJson!);
                 
-                var opponentHero =
-                    await _redisDb.HashGetAsync($"{_lobbyKey}:{eligiblePlayerId}", HeroHashField);
-
-                if (!opponentHero.HasValue) continue;
-
-
-                HandleCreateMatch(
-                    transaction,
-                    [
-                        new CreateMatchPlayerOptions(player, queuedPlayer.SelectedHero),
-                        new CreateMatchPlayerOptions(opponent, opponentHero.ToString())
-                    ],
-                    false);
-
-                bool isSuccess = await transaction.ExecuteAsync();
-                if (isSuccess) return;
+                if (await TryToMatch(transaction, player, queuedPlayer.SelectedHero, eligiblePlayerId))
+                {
+                    var isSuccess = await transaction.ExecuteAsync();
+                    if (isSuccess) return;
+                }
             }
 
-            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            await _redisDb.SortedSetAddAsync(_queueKey, JsonSerializer.Serialize(queuedPlayer), timestamp);
+            await Requeue(queuedPlayer);
         }
         catch (Exception e)
         {
             Console.Error.WriteLine(e);
-            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            // Add failure limit
-            await _redisDb.SortedSetAddAsync(_queueKey, JsonSerializer.Serialize(queuedPlayer), timestamp);
+            await Requeue(queuedPlayer); // Add failure limit
         }
     }
 
-    private void HandleCreateMatch(IDatabaseAsync db, List<CreateMatchPlayerOptions> players, bool withBot)
+    private ITransaction CreateWatchedTransaction(QueuedPlayer queuedPlayer, string playerJson)
+    {
+        var transaction = _redisDb.CreateTransaction();
+        transaction.AddCondition(Condition.StringEqual(playerRepository.GetKey(queuedPlayer.PlayerId), playerJson));
+
+        return transaction;
+    }
+
+    private double GetSecondsSinceQueue(QueuedPlayer queuedPlayer)
+    {
+        return (DateTimeOffset.UtcNow - queuedPlayer.QueuedAt).TotalSeconds;
+    }
+
+    private bool HasQueuedTooLong(QueuedPlayer queuedPlayer)
+    {
+        var secondsPassed = GetSecondsSinceQueue(queuedPlayer);
+        return secondsPassed >= _matchmakingConfig.MaxQueueWaitSeconds;
+    }
+
+    private List<string> GetEligibleOpponentIds(Player player, QueuedPlayer queuedPlayer)
+    {
+        var rating = player.SkillRating;
+        var secondsPassed = GetSecondsSinceQueue(queuedPlayer);
+        var expansion = GetRatingExpansion(rating, secondsPassed);
+        var eligiblePlayers = // + 1 because we add timestamp to the score
+            _redisDb.SortedSetRangeByScore(_lobbyKey, Math.Max(rating - expansion, 0), rating + expansion + 1);
+
+        return eligiblePlayers
+            .Where(p => p != player.Id)
+            .Select(p => p.ToString())
+            .ToList();
+    }
+
+    private async Task<bool> TryToMatch(ITransaction transaction, Player player, string playerHero, string opponentId)
+    {
+        try
+        {
+            var opponent = await playerRepository.GetAsync(_redisDb, opponentId);
+            if (opponent is null || opponent.Status != PlayerStatus.SearchingMatch) return false;
+
+            var opponentHero = await _redisDb.HashGetAsync($"{_lobbyKey}:{opponentId}", HeroHashField);
+
+            if (!opponentHero.HasValue) return false;
+
+            HandleCreateMatch(transaction,
+            [
+                new CreateMatchPlayerOptions(player, playerHero),
+                new CreateMatchPlayerOptions(opponent, opponentHero.ToString())
+            ], false);
+            return true;
+        }
+        catch (Exception e)
+        {
+            Console.Error.WriteLine(e);
+            return false;
+        }
+    }
+
+    private void HandleCreateMatch(ITransaction transaction, List<CreateMatchPlayerOptions> players, bool withBot)
     {
         List<MatchPlayer> matchPlayers = new();
 
         foreach (var p in players)
         {
             matchPlayers.Add(new MatchPlayer(p.Player.Id, p.SelectedHero));
-            db.SortedSetRemoveAsync(_lobbyKey, p.Player.Id);
-            db.KeyDeleteAsync($"{_lobbyKey}:{p.Player.Id}");
+            transaction.SortedSetRemoveAsync(_lobbyKey, p.Player.Id);
+            transaction.KeyDeleteAsync($"{_lobbyKey}:{p.Player.Id}");
 
-            playerRepository.SaveAsync(db, p.Player.UpdateStatus(PlayerStatus.FoundMatch));
+            playerRepository.EnqueueSaveAsync(transaction, p.Player.UpdateStatus(PlayerStatus.FoundMatch));
         }
 
-        matchRepository.SaveAsync(db, new Match(matchPlayers, withBot));
+        matchRepository.EnqueueSaveAsync(transaction, new Match(matchPlayers, withBot));
     }
 
     private int GetRatingExpansion(int playerRating, double queueingSeconds)
@@ -103,5 +134,11 @@ public partial class MatchmakingService
                         );
 
         return (int)(initialRateExpansion + expansion);
+    }
+
+    private async Task Requeue(QueuedPlayer queuedPlayer)
+    {
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        await _redisDb.SortedSetAddAsync(_queueKey, JsonSerializer.Serialize(queuedPlayer), timestamp);
     }
 }

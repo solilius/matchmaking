@@ -18,6 +18,14 @@ public class PlayerRepository(IOptions<RedisSettings> redisSettings) : IReposito
         return await db.StringSetAsync(key, json);
     }
     
+    public void EnqueueSaveAsync(ITransaction db, Player player)
+    {
+        var key = GetKey(player.Id);
+        var json = JsonSerializer.Serialize(player);
+
+        db.StringSetAsync(key, json);
+    }
+    
     public async Task<Player?> GetAsync(IDatabaseAsync db, string playerId)
     {
         var json = await GetJsonAsync(db, playerId);
@@ -36,13 +44,12 @@ public class PlayerRepository(IOptions<RedisSettings> redisSettings) : IReposito
         return json;
     }
 
-    public async Task<bool> RemoveAsync(IDatabaseAsync db, string playerId)
+    public void EnqueueRemoveAsync(ITransaction db, string playerId)
     {
         var key = GetKey(playerId);
-        
-        return await db.KeyDeleteAsync(key);
+        db.KeyDeleteAsync(key);
     }
-
+    
     public string GetKey(string id)
     {
         return $"{_keys.PlayersKey}:{id}";
