@@ -28,14 +28,21 @@ public class PlayerRepository(IOptions<RedisSettings> redisSettings) : IReposito
 
     public async Task<string?> GetJsonAsync(IDatabaseAsync db, string playerId)
     {
-        var key = $"{_keys.PlayersKey}:{playerId}";
+        var key = GetKey(playerId);
         var json = await db.StringGetAsync(key);
 
         if (json.IsNullOrEmpty) return null;
 
         return json;
     }
-    
+
+    public async Task<bool> RemoveAsync(IDatabaseAsync db, string playerId)
+    {
+        var key = GetKey(playerId);
+        
+        return await db.KeyDeleteAsync(key);
+    }
+
     public string GetKey(string id)
     {
         return $"{_keys.PlayersKey}:{id}";

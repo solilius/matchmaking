@@ -12,7 +12,7 @@ public class MatchRepository(IOptions<RedisSettings> redisSettings) : IRepositor
 
     public async Task<bool> SaveAsync(IDatabaseAsync db, Match match)
     {
-        var key = $"{_keys.MatchesKey}:{match.Id}";
+        var key = GetKey(match.Id);
         var json = JsonSerializer.Serialize(match);
 
         bool isSuccess = await db.StringSetAsync(key, json);
@@ -36,12 +36,19 @@ public class MatchRepository(IOptions<RedisSettings> redisSettings) : IRepositor
 
     public async Task<string?> GetJsonAsync(IDatabaseAsync db, string matchId)
     {
-        var key = $"{_keys.MatchesKey}:{matchId}";
+        var key = GetKey(matchId);
         var json = await db.StringGetAsync(key);
 
         if (json.IsNullOrEmpty) return null;
 
         return json;
+    }
+    
+    public async Task<bool> RemoveAsync(IDatabaseAsync db, string matchId)
+    {
+        var key = GetKey(matchId);
+        
+        return await db.KeyDeleteAsync(key);
     }
     
     public async Task<string?> GetMatchIdAsync(IConnectionMultiplexer redis, IDatabaseAsync db, string playerId)

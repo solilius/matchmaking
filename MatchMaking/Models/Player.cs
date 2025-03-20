@@ -12,6 +12,13 @@ public class Player
         Status = status;
         return this;
     }
+    
+    public Player MatchCompleted(int ratingModifier)
+    {
+        Status = PlayerStatus.Idle;
+        SkillRating += ratingModifier;
+        return this;
+    }
 }
 
 public enum PlayerStatus

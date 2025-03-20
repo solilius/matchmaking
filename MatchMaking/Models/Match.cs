@@ -8,9 +8,10 @@ public class Match(List<MatchPlayer> players,  bool containsBot)
     public MatchStatus Status { get; set; } = MatchStatus.Pending;
     public bool ContainsBot { get; } = containsBot;
 
-    public void UpdateStatus(MatchStatus status)
+    public Match UpdateStatus(MatchStatus status)
     {
         Status = status;
+        return this;
     }
 }
 
@@ -18,4 +19,5 @@ public enum MatchStatus
 {
     Pending,
     Ongoing,
+    Completed,
 }
