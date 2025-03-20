@@ -14,6 +14,7 @@ public partial class MatchmakingService(
     IOptions<MatchmakingConfig> matchmakingConfig)
 {
     private const string HeroHashField = "selectedHero";
+    
     private readonly IDatabase _redisDb = redis.GetDatabase();
     private readonly MatchmakingConfig _matchmakingConfig = matchmakingConfig.Value;
     private readonly string _lobbyKey = redisSettings.Value.RedisKeys.LobbyKey;
@@ -26,11 +27,11 @@ public partial class MatchmakingService(
 
         var queuedAt = DateTimeOffset.UtcNow;
         var timestamp = queuedAt.ToUnixTimeSeconds();
-        var memberValue = FormatMemberValue(playerId, timestamp);
+        var score = player.SkillRating + timestamp / Math.Pow(10, timestamp.ToString().Length);
         
         var transaction = _redisDb.CreateTransaction();
-        transaction.SortedSetAddAsync(_lobbyKey, memberValue, player.SkillRating);
-        transaction.HashSetAsync( $"{_lobbyKey}:{memberValue}", HeroHashField, selectedHero);
+        transaction.SortedSetAddAsync(_lobbyKey, playerId, score);
+        transaction.HashSetAsync( $"{_lobbyKey}:{playerId}", HeroHashField, selectedHero);
         transaction.SortedSetAddAsync(_queueKey, FormatQueuedPlayer(player, selectedHero, queuedAt), timestamp);
 
         player.UpdateStatus(PlayerStatus.SearchingMatch);
@@ -59,13 +60,10 @@ public partial class MatchmakingService(
         try
         {
             var player = await playerRepository.GetAsync(_redisDb, playerId);
-            var key = GetKey($"{_lobbyKey}*{playerId}*");
-            var memberValue = key?.Split($"{_lobbyKey}:")[1];
-
             var transaction = _redisDb.CreateTransaction();
 
-            transaction.SortedSetRemoveAsync(_lobbyKey, memberValue);
-            transaction.KeyDeleteAsync($"{_lobbyKey}:{memberValue}");
+            transaction.SortedSetRemoveAsync(_lobbyKey, playerId);
+            transaction.KeyDeleteAsync($"{_lobbyKey}:{playerId}");
 
             playerRepository.SaveAsync(transaction, player.UpdateStatus(PlayerStatus.Idle));
 

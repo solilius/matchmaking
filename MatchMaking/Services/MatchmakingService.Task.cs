@@ -24,7 +24,7 @@ public partial class MatchmakingService
 
             if (secondsPassed >= _matchmakingConfig.MaxQueueWaitSeconds)
             {
-                HandleCreateMatch(transaction, [new(player, queuedPlayer)], true);
+                HandleCreateMatch(transaction, [new(player, queuedPlayer.SelectedHero)], true);
 
                 bool isSuccess = await transaction.ExecuteAsync();
                 if (isSuccess) return;
@@ -32,26 +32,19 @@ public partial class MatchmakingService
 
             var rating = player.SkillRating;
             var expansion = GetRatingExpansion(rating, secondsPassed);
-            var eligiblePlayers =
-                _redisDb.SortedSetRangeByScore(_lobbyKey, Math.Max(rating - expansion, 0), rating + expansion);
+            var eligiblePlayers =                                      // + 1 because we add timestamp to the score
+                _redisDb.SortedSetRangeByScore(_lobbyKey, Math.Max(rating - expansion, 0), rating + expansion + 1);
 
-            // TODO: use timestamp in score and search max +1 this way it will be sorted already
-            var sortedEligiblePlayers = eligiblePlayers
-                .Select(entry => entry.ToString().Split(':'))
-                .Select(parts => new { PlayerId = parts[0], Timestamp = long.Parse(parts[1]) })
-                .Where(p => p.PlayerId != queuedPlayer.PlayerId)
-                .OrderBy(p => p.Timestamp);
+            var filteredEligiblePlayers = eligiblePlayers
+                .Where(p => p != queuedPlayer.PlayerId);
 
-            foreach (var eligiblePlayer in sortedEligiblePlayers)
+            foreach (var eligiblePlayerId in filteredEligiblePlayers)
             {
-                var opponent = await playerRepository.GetAsync(_redisDb, eligiblePlayer.PlayerId);
+                var opponent = await playerRepository.GetAsync(_redisDb, eligiblePlayerId);
                 if (opponent is null || opponent.Status != PlayerStatus.SearchingMatch) continue;
-
-
-                var opponentMemberValue = FormatMemberValue(eligiblePlayer.PlayerId, eligiblePlayer.Timestamp);
-
+                
                 var opponentHero =
-                    await _redisDb.HashGetAsync($"{_lobbyKey}:{opponentMemberValue}", HeroHashField);
+                    await _redisDb.HashGetAsync($"{_lobbyKey}:{eligiblePlayerId}", HeroHashField);
 
                 if (!opponentHero.HasValue) continue;
 
@@ -59,10 +52,8 @@ public partial class MatchmakingService
                 HandleCreateMatch(
                     transaction,
                     [
-                        new CreateMatchPlayerOptions(player, queuedPlayer),
-                        new CreateMatchPlayerOptions(opponent,
-                            new QueuedPlayer(opponent.Id, opponentHero.ToString(),
-                                DateTimeOffset.FromUnixTimeSeconds(eligiblePlayer.Timestamp)))
+                        new CreateMatchPlayerOptions(player, queuedPlayer.SelectedHero),
+                        new CreateMatchPlayerOptions(opponent, opponentHero.ToString())
                     ],
                     false);
 
@@ -88,10 +79,9 @@ public partial class MatchmakingService
 
         foreach (var p in players)
         {
-            var memberValue = FormatMemberValue(p.Player.Id, p.QueuedPlayer.QueuedAt.ToUnixTimeSeconds());
-            matchPlayers.Add(new MatchPlayer(p.Player.Id, p.QueuedPlayer.SelectedHero));
-            db.SortedSetRemoveAsync(_lobbyKey, memberValue);
-            db.KeyDeleteAsync($"{_lobbyKey}:{memberValue}");
+            matchPlayers.Add(new MatchPlayer(p.Player.Id, p.SelectedHero));
+            db.SortedSetRemoveAsync(_lobbyKey, p.Player.Id);
+            db.KeyDeleteAsync($"{_lobbyKey}:{p.Player.Id}");
 
             playerRepository.SaveAsync(db, p.Player.UpdateStatus(PlayerStatus.FoundMatch));
         }

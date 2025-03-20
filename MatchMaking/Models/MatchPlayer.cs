@@ -6,8 +6,8 @@ public class MatchPlayer(string playerId, string selectedHero)
     public string SelectedHero { get; set; } = selectedHero;
 }
 
-public class CreateMatchPlayerOptions(Player player, QueuedPlayer queuedPlayer)
+public class CreateMatchPlayerOptions(Player player, string selectedHero)
 {
     public Player Player { get; set; } = player;
-    public QueuedPlayer QueuedPlayer { get; set; } = queuedPlayer;
+    public string SelectedHero { get; set; } = selectedHero;
 }
