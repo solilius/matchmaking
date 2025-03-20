@@ -46,11 +46,8 @@ public partial class MatchmakingService(
         
         if (player.Status == PlayerStatus.FoundMatch)
         {
-            var endpoint = redis.GetEndPoints().First();
-            var server = redis.GetServer(endpoint);
-            var key = server.Keys(pattern: $"{redisSettings.Value.RedisKeys.MatchesKey}*{playerId}*").FirstOrDefault();
-            
-            var matchId = key.ToString().Split(":")[1];
+            var key = GetKey($"{redisSettings.Value.RedisKeys.MatchesKey}*{playerId}*");
+            var matchId = key.Split(":")[1];
             return new PlayerQueueStatus(PlayerStatus.FoundMatch, matchId);
         }
 
@@ -62,7 +59,8 @@ public partial class MatchmakingService(
         try
         {
             var player = await playerRepository.GetAsync(_redisDb, playerId);
-            var memberValue = FormatMemberValue(playerId, 1); // TODO: timestamp
+            var key = GetKey($"{_lobbyKey}*{playerId}*");
+            var memberValue = key?.Split($"{_lobbyKey}:")[1];
 
             var transaction = _redisDb.CreateTransaction();
 
@@ -87,5 +85,13 @@ public partial class MatchmakingService(
     {
         var queuedPlayer = new QueuedPlayer(player.Id,selectedHero,queuedAt);
         return JsonSerializer.Serialize(queuedPlayer);
+    }
+
+    private string GetKey(string pattern)
+    {
+        var endpoint = redis.GetEndPoints().First();
+        var server = redis.GetServer(endpoint);
+        
+        return server.Keys(pattern: pattern).FirstOrDefault().ToString();
     }
 }
