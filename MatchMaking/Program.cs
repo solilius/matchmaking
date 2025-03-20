@@ -9,6 +9,8 @@ using StackExchange.Redis;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<RedisSettings>(builder.Configuration.GetSection("Redis"));
+builder.Services.Configure<MatchmakingConfig>(builder.Configuration.GetSection("Matchmaking"));
+
 var redisSettings = builder.Configuration.GetSection("Redis").Get<RedisSettings>();
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
@@ -22,12 +24,15 @@ builder.Services.AddHostedService<MatcherWorker>(sp =>
 
     return new MatcherWorker(
         redisDb,
-        sp.GetRequiredService<IOptions<RedisSettings>>(),
+        sp.GetRequiredService<IOptions<RedisSettings>>().Value.RedisKeys.QueueKey,
+        sp.GetRequiredService<IOptions<MatchmakingConfig>>().Value.ProcessBatchSize,
         matchmakingService.ProcessFindMatch
     );
 });
 
-builder.Services.AddSingleton<IPlayerRepository, PlayerRepository>();
+
+builder.Services.AddSingleton<IRepository<Player>, PlayerRepository>();
+builder.Services.AddSingleton<IRepository<Match>, MatchRepository>();
 builder.Services.AddSingleton<MatchmakingService>();
 
 builder.Services.AddControllers();

@@ -6,87 +6,67 @@ using StackExchange.Redis;
 
 namespace Matchmaking.Services;
 
-public class MatchmakingService
+public partial class MatchmakingService(
+    IRepository<Player> playerRepository,
+    IRepository<Match> matchRepository,
+    IConnectionMultiplexer redis,
+    IOptions<RedisSettings> redisSettings,
+    IOptions<MatchmakingConfig> matchmakingConfig)
 {
-    private readonly IPlayerRepository _playerRepository; // Inject PlayerRepository
-    private readonly IDatabase _redisDb;
-    private readonly RedisKeys _keys;
-
-    public MatchmakingService(IPlayerRepository playerRepository, IConnectionMultiplexer redis,
-        IOptions<RedisSettings> redisSettings)
-    {
-        _playerRepository = playerRepository;
-        _redisDb = redis.GetDatabase();
-        _keys = redisSettings.Value.RedisKeys;
-    }
-
+    private const string HeroHashField = "selectedHero";
+    private readonly IDatabase _redisDb = redis.GetDatabase();
+    private readonly MatchmakingConfig _matchmakingConfig = matchmakingConfig.Value;
+    private readonly string _lobbyKey = redisSettings.Value.RedisKeys.LobbyKey;
+    private readonly string _queueKey = redisSettings.Value.RedisKeys.QueueKey;
+    
     public async Task AddToPlayerQueueAsync(string playerId, string selectedHero)
     {
-        var player = await _playerRepository.GetPlayerAsync(_redisDb, playerId);
+        var player = await playerRepository.GetAsync(_redisDb, playerId);
+        if (player is null) throw new KeyNotFoundException($"Player {playerId} not found");
 
         var queuedAt = DateTimeOffset.UtcNow;
         var timestamp = queuedAt.ToUnixTimeSeconds();
-
+        var memberValue = FormatMemberValue(playerId, timestamp);
+        
         var transaction = _redisDb.CreateTransaction();
-        
-        transaction.SortedSetAddAsync(_keys.PlayersQueueKey, FormatMemberValue(playerId, player.SkillRating), timestamp);
-        transaction.SortedSetAddAsync(_keys.TasksQueueKey, FormatQueuedPlayer(player, selectedHero, queuedAt), timestamp);
-        
-        player.Status = PlayerStatus.SearchingMatch; // ew
-        _playerRepository.SavePlayerAsync(transaction, player);
-        
-        await transaction.ExecuteAsync();
+        transaction.SortedSetAddAsync(_lobbyKey, memberValue, player.SkillRating);
+        transaction.HashSetAsync( $"{_lobbyKey}:{memberValue}", HeroHashField, selectedHero);
+        transaction.SortedSetAddAsync(_queueKey, FormatQueuedPlayer(player, selectedHero, queuedAt), timestamp);
+
+        player.UpdateStatus(PlayerStatus.SearchingMatch);
+        playerRepository.SaveAsync(transaction, player);
+
+        bool isSuccess = await transaction.ExecuteAsync();
+        if (!isSuccess) throw new ApplicationException($"Failed to add player {playerId} to queue");
     }
 
     public async Task<PlayerQueueStatus> GetPlayerQueueStatus(string playerId)
     {
-        var player = await _playerRepository.GetPlayerAsync(_redisDb, playerId);
-        if (player.Status == PlayerStatus.FoundMatch)
-        {
-            var matchId = ""; // _matchRepository.MatchAsync(playerId);
-            return new PlayerQueueStatus(PlayerStatus.FoundMatch, matchId);
-        }
+        var player = await playerRepository.GetAsync(_redisDb, playerId);
         
+        // if (player.Status == PlayerStatus.FoundMatch)
+        // {
+        //     var matchId = await matchRepository.GetMatchIdAsync(redis, _redisDb, playerId);
+        //     return new PlayerQueueStatus(PlayerStatus.FoundMatch, matchId);
+        // }
+
         return new PlayerQueueStatus(player.Status);
     }
 
     public async Task RemovePlayerFromQueueAsync(string playerId)
     {
-        var player = await _playerRepository.GetPlayerAsync(_redisDb, playerId);
-        var isSuccess = await _redisDb.SortedSetRemoveAsync(_keys.TasksQueueKey, FormatMemberValue(playerId, player.SkillRating));
+        var player = await playerRepository.GetAsync(_redisDb, playerId);
+        // remove from lobby    
         // remove from tasks
         // update player
         // throw if failed(?)
     }
-
-    public Task ProcessFindMatch(QueuedPlayer queuedPlayer)
-    {
-        Console.WriteLine($"Processing player: {queuedPlayer.PlayerId}");
-        return Task.CompletedTask;
-    }
     
-    private string FormatMemberValue(string playerId, int rating)
-    {
-        return $"{playerId}:{rating}";
-    }
+    private string FormatMemberValue(string playerId, long timestamp) => $"{playerId}:{timestamp}";
 
-    private string FormatQueuedPlayer(Player player, string selectedHero, DateTimeOffset  queuedAt)
+    private string FormatQueuedPlayer(Player player, string selectedHero, DateTimeOffset queuedAt)
     {
-        var queuedPlayer = new QueuedPlayer
-        {
-            PlayerId = player.Id,
-            SelectedHero = selectedHero,
-            CurrentRating = player.SkillRating,
-            QueuedAt = queuedAt,
-            SkillRangeExpansion = CalculateSkillRangeExpansion(queuedAt)
-        };
-
+        var queuedPlayer = new QueuedPlayer(player.Id,selectedHero,queuedAt);
         return JsonSerializer.Serialize(queuedPlayer);
-    }
-
-    private float CalculateSkillRangeExpansion(DateTimeOffset queuedAt)
-    {
-        // TODO: Implement
-        return 0;
     }
 }

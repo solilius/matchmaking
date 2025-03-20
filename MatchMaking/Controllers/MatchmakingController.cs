@@ -8,7 +8,6 @@ namespace Matchmaking.Controllers;
 [Route("matchmaking")]
 public class MatchmakingController(MatchmakingService matchmakingService) : ControllerBase
 {
-
     // TODO: ADD VALIDATIONS
     // TODO: ERROR HANDLING
     

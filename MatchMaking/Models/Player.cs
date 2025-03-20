@@ -6,6 +6,12 @@ public class Player
     public string Username { get; set; }
     public int SkillRating { get; set; }
     public PlayerStatus Status { get; set; }
+
+    public Player UpdateStatus(PlayerStatus status)
+    {
+        Status = status;
+        return this;
+    }
 }
 
 public enum PlayerStatus

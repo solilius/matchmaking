@@ -1,10 +1,8 @@
 namespace Matchmaking.Models;
 
-public class QueuedPlayer
+public class QueuedPlayer(string playerId, string selectedHero, DateTimeOffset  queuedAt)
 {
-    public string PlayerId { get; set; }
-    public string SelectedHero { get; set; }
-    public int CurrentRating { get; set; }
-    public DateTimeOffset  QueuedAt { get; set; }
-    public float SkillRangeExpansion { get; set; } = 0.05f;
+    public string PlayerId { get; } = playerId;
+    public string SelectedHero { get; } = selectedHero;
+    public DateTimeOffset QueuedAt { get; } = queuedAt;
 }

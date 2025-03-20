@@ -14,10 +14,10 @@ public class MatcherWorker : IHostedService
     private CancellationTokenSource? _internalCts;
     private Task? _backgroundTask;
 
-    public MatcherWorker(IDatabase redisDb, IOptions<RedisSettings> redisSettings, Func<QueuedPlayer, Task> processTask)
+    public MatcherWorker(IDatabase redisDb, string queueKey, int processBatchSize, Func<QueuedPlayer, Task> processTask)
     {
-        _queueKey = redisSettings.Value.RedisKeys.TasksQueueKey;
-        _batchSize = redisSettings.Value.ProcessBatchSize;
+        _queueKey = queueKey;
+        _batchSize = processBatchSize;
         _redisDb = redisDb;
         _processTask = processTask;
     }
@@ -55,7 +55,7 @@ public class MatcherWorker : IHostedService
             try
             {
                 var tasks = await GetQueuedPlayers(_batchSize);
-                
+
                 if (tasks.Length > 0) tasks.ToList().ForEach(task => _processTask(task));
                 else await Task.Delay(500, token);
             }
