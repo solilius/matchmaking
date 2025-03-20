@@ -2,7 +2,8 @@ namespace Matchmaking.Models;
 
 public class Match(List<MatchPlayer> players,  bool containsBot)
 {
-    public string Id { get; } = Guid.NewGuid().ToString();
+    public string Id { get; } = string.Join("-", players.Select(p => p.PlayerId));
+
     public List<MatchPlayer> Players { get; } = players;
     public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
     public MatchStatus Status { get; set; } = MatchStatus.Pending;

@@ -9,7 +9,6 @@ namespace Matchmaking.Controllers;
 public class MatchmakingController(MatchmakingService matchmakingService) : ControllerBase
 {
     // TODO: ADD VALIDATIONS
-    // TODO: ERROR HANDLING
     
     [HttpPost("queue")]
     public async Task<IActionResult> AddPlayerToQueue([FromBody] QueueRequest request)

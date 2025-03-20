@@ -51,19 +51,6 @@ public class MatchRepository(IOptions<RedisSettings> redisSettings) : IRepositor
         return await db.KeyDeleteAsync(key);
     }
     
-    public async Task<string?> GetMatchIdAsync(IConnectionMultiplexer redis, IDatabaseAsync db, string playerId)
-    {
-        var endpoint = redis.GetEndPoints().First();
-        var server = redis.GetServer(endpoint);
-        var key = server.Keys(pattern: $"{_keys.MatchesKey}*{playerId}*").FirstOrDefault();
-
-        var json = await db.StringGetAsync(key);
-
-        if (json.IsNullOrEmpty) return null;
-        var match = JsonSerializer.Deserialize<Match>(json!);
-        return match?.Id;
-    }
-    
     public string GetKey(string id)
     {
         return $"{_keys.MatchesKey}:{id}";

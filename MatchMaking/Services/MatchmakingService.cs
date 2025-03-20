@@ -44,22 +44,41 @@ public partial class MatchmakingService(
     {
         var player = await playerRepository.GetAsync(_redisDb, playerId);
         
-        // if (player.Status == PlayerStatus.FoundMatch)
-        // {
-        //     var matchId = await matchRepository.GetMatchIdAsync(redis, _redisDb, playerId);
-        //     return new PlayerQueueStatus(PlayerStatus.FoundMatch, matchId);
-        // }
+        if (player.Status == PlayerStatus.FoundMatch)
+        {
+            var endpoint = redis.GetEndPoints().First();
+            var server = redis.GetServer(endpoint);
+            var key = server.Keys(pattern: $"{redisSettings.Value.RedisKeys.MatchesKey}*{playerId}*").FirstOrDefault();
+            
+            var matchId = key.ToString().Split(":")[1];
+            return new PlayerQueueStatus(PlayerStatus.FoundMatch, matchId);
+        }
 
         return new PlayerQueueStatus(player.Status);
     }
 
     public async Task RemovePlayerFromQueueAsync(string playerId)
     {
-        var player = await playerRepository.GetAsync(_redisDb, playerId);
-        // remove from lobby    
-        // remove from tasks
-        // update player
-        // throw if failed(?)
+        try
+        {
+            var player = await playerRepository.GetAsync(_redisDb, playerId);
+            var memberValue = FormatMemberValue(playerId, 1); // TODO: timestamp
+
+            var transaction = _redisDb.CreateTransaction();
+
+            transaction.SortedSetRemoveAsync(_lobbyKey, memberValue);
+            transaction.KeyDeleteAsync($"{_lobbyKey}:{memberValue}");
+
+            playerRepository.SaveAsync(transaction, player.UpdateStatus(PlayerStatus.Idle));
+
+            await transaction.ExecuteAsync();
+
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            throw;
+        }
     }
     
     private string FormatMemberValue(string playerId, long timestamp) => $"{playerId}:{timestamp}";
