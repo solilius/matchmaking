@@ -22,7 +22,9 @@ public partial class MatchmakingService(
     public async Task AddToPlayerQueueAsync(string playerId, string selectedHero)
     {
         var player = await playerRepository.GetAsync(_redisDb, playerId);
-        if (player is null) throw new KeyNotFoundException($"Player {playerId} not found");
+        if (await ShouldQueuePlayer(player)) throw new ApplicationException($"Invalid player to queue");
+
+        if ((await _redisDb.SortedSetScoreAsync(_Keys.LobbyKey, playerId)).HasValue) return;
 
         var queuedAt = DateTimeOffset.UtcNow;
         var timestamp = queuedAt.ToUnixTimeSeconds();
@@ -44,7 +46,7 @@ public partial class MatchmakingService(
     {
         var player = await playerRepository.GetAsync(_redisDb, playerId);
         if (player is null) throw new KeyNotFoundException($"Player {playerId} not found");
-        
+
         if (player.Status == PlayerStatus.FoundMatch)
         {
             var matchId = await _redisDb.StringGetAsync($"{_Keys.PlayerMatchKey}:{playerId}");
@@ -73,5 +75,11 @@ public partial class MatchmakingService(
     {
         var queuedPlayer = new QueuedPlayer(player.Id, selectedHero, queuedAt);
         return JsonSerializer.Serialize(queuedPlayer);
+    }
+
+    private async Task<bool> ShouldQueuePlayer(Player? player)
+    {
+        return player is null || player.Status == PlayerStatus.SearchingMatch ||
+               (await _redisDb.SortedSetScoreAsync(_Keys.LobbyKey, player.Id)).HasValue;
     }
 }
