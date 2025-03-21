@@ -6,10 +6,7 @@ namespace MatchMaking.Tests;
 
 class RedisSeeder
 {
-    private static readonly ConnectionMultiplexer _redis = ConnectionMultiplexer.Connect("localhost:6379"); // change if needed
-    private static readonly IDatabase _db = _redis.GetDatabase();
- 
-    public static async Task Seed()
+    public static async Task Seed(IDatabase db )
     {
         var rand = new Random();
  
@@ -24,7 +21,7 @@ class RedisSeeder
             };
  
             var json = JsonSerializer.Serialize(player);
-            await _db.StringSetAsync($"player:{player.Id}", json);
+            await db.StringSetAsync($"player:{player.Id}", json);
         }
         Console.WriteLine("Seeding complete!");
     }

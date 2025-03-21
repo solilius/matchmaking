@@ -35,7 +35,7 @@ builder.Services.AddHostedService<MatcherWorker>(sp =>
     var redisDb = sp.GetRequiredService<IConnectionMultiplexer>().GetDatabase();
     var matchmakingService = sp.GetRequiredService<MatchmakingService>();
     
-    RedisSeeder.Seed();
+    RedisSeeder.Seed(redisDb);
 
     return new MatcherWorker(
         redisDb,
@@ -52,6 +52,7 @@ builder.Services.AddSingleton<MatchmakingService>();
 
 builder.Services.AddControllers();
 builder.Services.AddSwaggerGen();
+builder.WebHost.UseUrls("http://0.0.0.0:8080");
 
 var app = builder.Build();
 
@@ -62,7 +63,6 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();
 
