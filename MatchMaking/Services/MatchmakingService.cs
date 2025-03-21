@@ -45,11 +45,10 @@ public partial class MatchmakingService(
     {
         var player = await playerRepository.GetAsync(_redisDb, playerId);
         if (player is null) throw new KeyNotFoundException($"Player {playerId} not found");
-
+        
         if (player.Status == PlayerStatus.FoundMatch)
         {
-            var key = GetKey($"{redisSettings.Value.RedisKeys.MatchesKey}*{playerId}*");
-            var matchId = key.Split(":")[1];
+            var matchId = ""; // TODO: FIX
             return new PlayerQueueStatus(PlayerStatus.FoundMatch, matchId);
         }
 
@@ -75,13 +74,5 @@ public partial class MatchmakingService(
     {
         var queuedPlayer = new QueuedPlayer(player.Id, selectedHero, queuedAt);
         return JsonSerializer.Serialize(queuedPlayer);
-    }
-
-    private string GetKey(string pattern)
-    {
-        var endpoint = redis.GetEndPoints().First();
-        var server = redis.GetServer(endpoint);
-
-        return server.Keys(pattern: pattern).FirstOrDefault().ToString();
     }
 }

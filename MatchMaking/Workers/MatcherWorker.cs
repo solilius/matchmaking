@@ -55,13 +55,15 @@ public class MatcherWorker : IHostedService
             try
             {
                 var tasks = await GetQueuedPlayers(_batchSize);
-
-                if (tasks.Length > 0) tasks.ToList().ForEach(task => _processTask(task));
-                else await Task.Delay(500, token);
+                if (tasks.Length > 0) await Task.WhenAll(tasks.Select(task => _processTask(task)));
             }
             catch (Exception e)
             {
-                Console.WriteLine(e);
+                Console.Error.WriteLine(e);
+            }
+            finally
+            {
+                await Task.Delay(500, token);
             }
         }
     }

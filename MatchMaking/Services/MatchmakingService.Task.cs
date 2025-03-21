@@ -13,12 +13,12 @@ public partial class MatchmakingService
             var playerJson = await playerRepository.GetJsonAsync(_redisDb, queuedPlayer.PlayerId);
             var player = JsonSerializer.Deserialize<Player>(playerJson!);
 
-            if (player is null || player.Status != PlayerStatus.SearchingMatch) return;
+            if (IsPlayerNotSearching(player)) return;
 
 
             if (HasQueuedTooLong(queuedPlayer))
             {
-                var transaction = CreateWatchedTransaction(queuedPlayer, playerJson!);
+                var transaction = CreateWatchedTransaction(queuedPlayer.PlayerId, playerJson!);
                 HandleCreateMatch(transaction, [new(player, queuedPlayer.SelectedHero)], true);
                 await transaction.ExecuteAsync();
                 return; // If ExecuteAsync returns false, throw to requeue in catch.
@@ -28,8 +28,13 @@ public partial class MatchmakingService
 
             foreach (var eligiblePlayerId in eligibleOpponentIds)
             {
-                var transaction = CreateWatchedTransaction(queuedPlayer, playerJson!);
-                
+                var opponentJson = await playerRepository.GetJsonAsync(_redisDb, eligiblePlayerId);
+                var opponent = JsonSerializer.Deserialize<Player>(opponentJson!);
+                if (IsPlayerNotSearching(opponent)) continue;
+
+                var transaction =
+                    CreateWatchedTransaction(queuedPlayer.PlayerId, playerJson!, eligiblePlayerId, opponentJson);
+
                 if (await TryToMatch(transaction, player, queuedPlayer.SelectedHero, eligiblePlayerId))
                 {
                     var isSuccess = await transaction.ExecuteAsync();
@@ -46,10 +51,21 @@ public partial class MatchmakingService
         }
     }
 
-    private ITransaction CreateWatchedTransaction(QueuedPlayer queuedPlayer, string playerJson)
+    private bool IsPlayerNotSearching(Player? player)
+    {
+        return (player is null || player.Status != PlayerStatus.SearchingMatch);
+    }
+
+    private ITransaction CreateWatchedTransaction(string playerId, string playerJson, string? opponentId = null,
+        string? opponentJson = null)
     {
         var transaction = _redisDb.CreateTransaction();
-        transaction.AddCondition(Condition.StringEqual(playerRepository.GetKey(queuedPlayer.PlayerId), playerJson));
+        transaction.AddCondition(Condition.StringEqual(playerRepository.GetKey(playerId), playerJson));
+
+        if (opponentJson != null && opponentId != null)
+        {
+            transaction.AddCondition(Condition.StringEqual(playerRepository.GetKey(opponentId), opponentJson));
+        }
 
         return transaction;
     }
@@ -71,7 +87,15 @@ public partial class MatchmakingService
         var secondsPassed = GetSecondsSinceQueue(queuedPlayer);
         var expansion = GetRatingExpansion(rating, secondsPassed);
         var eligiblePlayers = // + 1 because we add timestamp to the score
-            _redisDb.SortedSetRangeByScore(_lobbyKey, Math.Max(rating - expansion, 0), rating + expansion + 1);
+            _redisDb.SortedSetRangeByScore(
+                _lobbyKey,
+                Math.Max(rating - expansion, 0),
+                rating + expansion + 1,
+                Exclude.None,
+                Order.Ascending,
+                0,
+                200
+            );
 
         return eligiblePlayers
             .Where(p => p != player.Id)

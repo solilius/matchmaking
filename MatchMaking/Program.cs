@@ -2,6 +2,7 @@ using MatchMaking.Interfaces;
 using Matchmaking.Models;
 using Matchmaking.Repositories;
 using Matchmaking.Services;
+using MatchMaking.Tests;
 using MatchMaking.Workers;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -14,13 +15,27 @@ builder.Services.Configure<MatchmakingConfig>(builder.Configuration.GetSection("
 var redisSettings = builder.Configuration.GetSection("Redis").Get<RedisSettings>();
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
-    ConnectionMultiplexer.Connect($"{redisSettings.Host}:{redisSettings.Port}")
-);
+{
+    var config = new ConfigurationOptions
+    {
+        EndPoints = { $"{redisSettings.Host}:{redisSettings.Port}" },
+        AbortOnConnectFail = false,
+        ConnectTimeout = 15000,
+        SyncTimeout = 15000,
+        KeepAlive = 60,
+        DefaultDatabase = 0,
+        AllowAdmin = true,
+    };
+    
+    return ConnectionMultiplexer.Connect(config);
+});
 
 builder.Services.AddHostedService<MatcherWorker>(sp =>
 {
     var redisDb = sp.GetRequiredService<IConnectionMultiplexer>().GetDatabase();
     var matchmakingService = sp.GetRequiredService<MatchmakingService>();
+    
+    RedisSeeder.Seed();
 
     return new MatcherWorker(
         redisDb,
