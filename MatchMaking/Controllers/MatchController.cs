@@ -1,6 +1,7 @@
 using MatchMaking.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Matchmaking.Models;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Matchmaking.Controllers;
@@ -10,6 +11,7 @@ namespace Matchmaking.Controllers;
 public class MatchController(
     IRepository<Match> matchRepository,
     IRepository<Player> playerRepository,
+    IOptions<RedisSettings> redisSettings,
     IConnectionMultiplexer redis) : ControllerBase
 {
     // TODO: ADD VALIDATIONS
@@ -73,6 +75,7 @@ public class MatchController(
             var player = await playerRepository.GetAsync(_redisDb, matchPlayer.PlayerId);
             var rateModifier = CalculatePlayerRating(matchPlayer.PlayerId, results);
             playerRepository.EnqueueSaveAsync(transaction, player.MatchCompleted(rateModifier));
+            transaction.KeyDeleteAsync($"{redisSettings.Value.RedisKeys.PlayerMatchKey}:{matchPlayer.PlayerId}");
         }
 
         matchRepository.EnqueueRemoveAsync(transaction, matchId);

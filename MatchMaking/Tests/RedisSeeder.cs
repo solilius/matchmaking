@@ -19,7 +19,7 @@ class RedisSeeder
             {
                 Id = i.ToString(),
                 Username = $"Player{i}",
-                SkillRating = rand.Next(1, 2000),
+                SkillRating = rand.Next(1, 5000),
                 Status = 0
             };
  

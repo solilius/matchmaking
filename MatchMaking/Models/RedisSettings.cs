@@ -15,4 +15,5 @@ public class RedisKeys
     public string QueueKey { get; set; }
     public string PlayersKey { get; set; }
     public string MatchesKey { get; set; }
+    public string PlayerMatchKey { get; set; }
 }

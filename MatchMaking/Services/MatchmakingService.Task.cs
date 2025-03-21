@@ -88,13 +88,13 @@ public partial class MatchmakingService
         var expansion = GetRatingExpansion(rating, secondsPassed);
         var eligiblePlayers = // + 1 because we add timestamp to the score
             _redisDb.SortedSetRangeByScore(
-                _lobbyKey,
+                _Keys.LobbyKey,
                 Math.Max(rating - expansion, 0),
                 rating + expansion + 1,
                 Exclude.None,
                 Order.Ascending,
                 0,
-                200
+                300
             );
 
         return eligiblePlayers
@@ -110,7 +110,7 @@ public partial class MatchmakingService
             var opponent = await playerRepository.GetAsync(_redisDb, opponentId);
             if (opponent is null || opponent.Status != PlayerStatus.SearchingMatch) return false;
 
-            var opponentHero = await _redisDb.HashGetAsync($"{_lobbyKey}:{opponentId}", HeroHashField);
+            var opponentHero = await _redisDb.HashGetAsync($"{_Keys.LobbyKey}:{opponentId}", HeroHashField);
 
             if (!opponentHero.HasValue) return false;
 
@@ -130,18 +130,20 @@ public partial class MatchmakingService
 
     private void HandleCreateMatch(ITransaction transaction, List<CreateMatchPlayerOptions> players, bool withBot)
     {
-        List<MatchPlayer> matchPlayers = new();
-
+        List<MatchPlayer> matchPlayers = players.Select(p => new MatchPlayer(p.Player.Id, p.SelectedHero)).ToList();
+        var match = new Match(matchPlayers, withBot);
+        
         foreach (var p in players)
         {
-            matchPlayers.Add(new MatchPlayer(p.Player.Id, p.SelectedHero));
-            transaction.SortedSetRemoveAsync(_lobbyKey, p.Player.Id);
-            transaction.KeyDeleteAsync($"{_lobbyKey}:{p.Player.Id}");
-
+            var playerToMatchKey = $"{_Keys.PlayerMatchKey}:{p.Player.Id}";
+            transaction.SortedSetRemoveAsync(_Keys.LobbyKey, p.Player.Id);
+            transaction.KeyDeleteAsync($"{_Keys.LobbyKey}:{p.Player.Id}");
+            transaction.StringSetAsync(playerToMatchKey, match.Id);
+            transaction.KeyExpireAsync(playerToMatchKey, TimeSpan.FromSeconds(redisSettings.Value.MatchTTL));
             playerRepository.EnqueueSaveAsync(transaction, p.Player.UpdateStatus(PlayerStatus.FoundMatch));
         }
 
-        matchRepository.EnqueueSaveAsync(transaction, new Match(matchPlayers, withBot));
+        matchRepository.EnqueueSaveAsync(transaction, match);
     }
 
     private int GetRatingExpansion(int playerRating, double queueingSeconds)
@@ -163,6 +165,6 @@ public partial class MatchmakingService
     private async Task Requeue(QueuedPlayer queuedPlayer)
     {
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        await _redisDb.SortedSetAddAsync(_queueKey, JsonSerializer.Serialize(queuedPlayer), timestamp);
+        await _redisDb.SortedSetAddAsync(_Keys.QueueKey, JsonSerializer.Serialize(queuedPlayer), timestamp);
     }
 }
